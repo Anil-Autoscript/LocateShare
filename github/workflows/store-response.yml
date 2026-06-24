@@ -1,0 +1,59 @@
+name: Store latest location response
+
+# Triggered by the Android app via the GitHub "repository_dispatch" API
+# right after it answers a request (or whenever the user flips the
+# sharing toggle, so backend/response.json always reflects current status).
+#
+# curl -X POST \
+#   -H "Authorization: Bearer <PAT>" \
+#   -H "Accept: application/vnd.github+json" \
+#   https://api.github.com/repos/<owner>/<repo>/dispatches \
+#   -d '{"event_type":"location-response","client_payload":{...}}'
+
+on:
+  repository_dispatch:
+    types: [location-response]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  store:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write response.json from dispatch payload
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          payload = json.loads(os.environ.get("PAYLOAD", "{}") or "{}")
+          if payload is None:
+              payload = {}
+          data = {
+              "latitude": payload.get("latitude", ""),
+              "longitude": payload.get("longitude", ""),
+              "address": payload.get("address", ""),
+              "timestamp": payload.get("timestamp", ""),
+              "sharing_enabled": payload.get("sharing_enabled", False),
+          }
+          with open("backend/response.json", "w") as f:
+              json.dump(data, f, indent=2)
+              f.write("\n")
+          # also clear the pending request flag, just in case
+          req = {"request": False, "requested_by": ""}
+          with open("backend/request.json", "w") as f:
+              json.dump(req, f, indent=2)
+              f.write("\n")
+          EOF
+        env:
+          PAYLOAD: ${{ toJson(github.event.client_payload) }}
+
+      - name: Commit
+        run: |
+          git config user.name "location-share-bot"
+          git config user.email "actions@github.com"
+          git add backend/response.json backend/request.json
+          git diff --cached --quiet || git commit -m "chore: store latest location response"
+          git push || true

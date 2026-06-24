@@ -1,0 +1,28 @@
+name: Poll Telegram for requests
+
+on:
+  schedule:
+    - cron: "*/3 * * * *"   # every 3 minutes (GitHub may throttle to ~5 min)
+  workflow_dispatch: {}      # allow manual trigger from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Telegram poller
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python3 scripts/poll_telegram.py
+
+      - name: Commit state changes (if any)
+        run: |
+          git config user.name "location-share-bot"
+          git config user.email "actions@github.com"
+          git add backend/request.json backend/last_update_id.txt 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "chore: update pending request state"
+          git push || true
