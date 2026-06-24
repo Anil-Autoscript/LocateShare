@@ -63,4 +63,7 @@ dependencies {
 
     // Fused Location Provider
     implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // Bridges Play Services Task<T> to Kotlin coroutines (provides .await())
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 }
