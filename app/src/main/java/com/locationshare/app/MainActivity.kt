@@ -3,6 +3,7 @@ package com.locationshare.app
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -59,6 +60,7 @@ class MainActivity : ComponentActivity() {
         // of waiting for the next scheduled flag check. Still only acts if
         // sharing is ON and a request is actually pending; it does not
         // fabricate a fake request.
+        Toast.makeText(this, "Checking for a pending request…", Toast.LENGTH_SHORT).show()
         val request = OneTimeWorkRequestBuilder<LocationCheckWorker>().build()
         WorkManager.getInstance(this).enqueue(request)
     }
