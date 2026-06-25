@@ -91,6 +91,7 @@ class LocationCheckWorker(
 
         val timestamp = timestampNow()
 
+        var deliveryFailed = false
         if (chatId.isNotBlank()) {
             val mapsLink = "https://maps.google.com/?q=${location.first},${location.second}"
             val message = buildString {
@@ -102,9 +103,21 @@ class LocationCheckWorker(
                 append("Google Maps: $mapsLink\n")
                 append("Time: $timestamp")
             }
-            withContext(Dispatchers.IO) {
+            val sent = withContext(Dispatchers.IO) {
                 TelegramApi(telegramToken).sendMessage(chatId, message)
             }
+            if (!sent) {
+                deliveryFailed = true
+            }
+        }
+
+        if (deliveryFailed) {
+            // Don't clear the request flag — leave it pending so the next
+            // scheduled check (or TEST LOCATION) retries delivery instead
+            // of silently losing the location fix. Most common cause: the
+            // Telegram Bot Token entered in onboarding doesn't match the
+            // one BotFather issued (typo / partial paste).
+            return Result.retry()
         }
 
         prefs.setLastSharedAddress(address)
@@ -147,11 +160,29 @@ class LocationCheckWorker(
         val client = LocationServices.getFusedLocationProviderClient(context)
         val request = CurrentLocationRequest.Builder()
             .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+            .setDurationMillis(20_000) // give it up to 20s for a fresh fix
             .build()
 
-        return runCatching {
+        val fresh = runCatching {
             val location = client.getCurrentLocation(request, null).await()
             location?.let { it.latitude to it.longitude }
+        }.getOrNull()
+
+        if (fresh != null) return fresh
+
+        // Fresh fix failed/timed out (common at night, indoors, or when the
+        // OS throttles GPS for background apps on some OEMs). Fall back to
+        // the last cached fix instead of failing outright — only used if
+        // it's reasonably recent (≤ 30 minutes old) so we never report a
+        // stale "current" location.
+        return runCatching {
+            val last = client.lastLocation.await()
+            val ageMs = last?.let { System.currentTimeMillis() - it.time }
+            if (last != null && ageMs != null && ageMs <= 30 * 60 * 1000L) {
+                last.latitude to last.longitude
+            } else {
+                null
+            }
         }.getOrNull()
     }
 
